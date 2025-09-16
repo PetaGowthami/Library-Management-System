@@ -1,0 +1,133 @@
+import java.sql.*;
+import java.util.ArrayList;
+
+public class Library {
+    private Connection conn;
+
+    public Library() {
+        try {
+            conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/library_db", "root", "password");
+        } catch (SQLException e) {
+            System.out.println("Database connection failed.");
+            e.printStackTrace();
+        }
+    }
+
+    public void addBook(Book book) {
+        try {
+            String query = "INSERT INTO books(id, title, author, is_available) VALUES (?, ?, ?, ?)";
+            PreparedStatement ps = conn.prepareStatement(query);
+            ps.setString(1, book.getId());
+            ps.setString(2, book.getTitle());
+            ps.setString(3, book.getAuthor());
+            ps.setBoolean(4, book.isAvailable());
+            ps.executeUpdate();
+            System.out.println("Book added: " + book.getTitle());
+        } catch (SQLIntegrityConstraintViolationException e) {
+            System.out.println("Book already exists.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void registerUser(User user) {
+        try {
+            String query = "INSERT INTO users(id, name) VALUES (?, ?)";
+            PreparedStatement ps = conn.prepareStatement(query);
+            ps.setString(1, user.getId());
+            ps.setString(2, user.getName());
+            ps.executeUpdate();
+            System.out.println("User registered: " + user.getName());
+        } catch (SQLIntegrityConstraintViolationException e) {
+            System.out.println("User already exists.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void borrowBook(String userId, String bookId) {
+        try {
+            String checkQuery = "SELECT is_available FROM books WHERE id=?";
+            PreparedStatement checkPs = conn.prepareStatement(checkQuery);
+            checkPs.setString(1, bookId);
+            ResultSet rs = checkPs.executeQuery();
+
+            if (!rs.next()) { System.out.println("Book ID not found."); return; }
+            if (!rs.getBoolean("is_available")) { System.out.println("Book not available."); return; }
+
+            String updateBook = "UPDATE books SET is_available=false WHERE id=?";
+            PreparedStatement updatePs = conn.prepareStatement(updateBook);
+            updatePs.setString(1, bookId);
+            updatePs.executeUpdate();
+
+            String insertHistory = "INSERT INTO borrow_history(user_id, book_id) VALUES (?, ?)";
+            PreparedStatement insertPs = conn.prepareStatement(insertHistory);
+            insertPs.setString(1, userId);
+            insertPs.setString(2, bookId);
+            insertPs.executeUpdate();
+
+            System.out.println("Book borrowed successfully.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void returnBook(String userId, String bookId) {
+        try {
+            String updateBook = "UPDATE books SET is_available=true WHERE id=?";
+            PreparedStatement updatePs = conn.prepareStatement(updateBook);
+            updatePs.setString(1, bookId);
+            updatePs.executeUpdate();
+
+            String updateReturn = "UPDATE borrow_history SET return_date=CURRENT_TIMESTAMP WHERE user_id=? AND book_id=? AND return_date IS NULL";
+            PreparedStatement returnPs = conn.prepareStatement(updateReturn);
+            returnPs.setString(1, userId);
+            returnPs.setString(2, bookId);
+            int rowsUpdated = returnPs.executeUpdate();
+
+            if (rowsUpdated > 0) System.out.println("Book returned successfully.");
+            else System.out.println("No borrowing record found for this user and book.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void viewAvailableBooks() {
+        try {
+            String query = "SELECT * FROM books WHERE is_available=true";
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(query);
+
+            boolean any = false;
+            System.out.println("Available Books:");
+            while (rs.next()) {
+                System.out.println("ID: " + rs.getString("id") + ", Title: " + rs.getString("title") +
+                        ", Author: " + rs.getString("author"));
+                any = true;
+            }
+            if (!any) System.out.println("No books available.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void viewBorrowHistory(String userId) {
+        try {
+            String query = "SELECT b.title, bh.borrow_date, bh.return_date FROM borrow_history bh JOIN books b ON bh.book_id=b.id WHERE bh.user_id=?";
+            PreparedStatement ps = conn.prepareStatement(query);
+            ps.setString(1, userId);
+            ResultSet rs = ps.executeQuery();
+
+            boolean any = false;
+            System.out.println("Borrow History:");
+            while (rs.next()) {
+                System.out.println("Book: " + rs.getString("title") + ", Borrowed: " + rs.getTimestamp("borrow_date") +
+                        ", Returned: " + rs.getTimestamp("return_date"));
+                any = true;
+            }
+            if (!any) System.out.println("No borrow history found.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+}
